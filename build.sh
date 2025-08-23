@@ -8,16 +8,13 @@ prepare() {
         return 1
     fi
 
-    # Carrega variáveis do .profile e da receita
+    # Carrega variáveis globais e receita
     . "$HOME/.profile"
     . "$recipe"
 
-    # Garante diretórios
     mkdir -p "$WORKDIR" "$LOGDIR"
 
     echo "==> Preparando $NAME-$VERSION"
-
-    # Sempre começa limpo (pode combinar com --keep-workdir se quiser)
     rm -rf "$WORKDIR"
     mkdir -p "$WORKDIR"
 
@@ -58,18 +55,28 @@ prepare() {
     fi
 
     if [ -n "$BUILD" ]; then
-        echo "==> Compilando"
+        echo "==> Gerando snapshot antes da instalação"
+        before="$WORKDIR/.before.lst"
+        after="$WORKDIR/.after.lst"
+        logfile="$LOGDIR/${NAME}-${VERSION}-files.log"
+
+        find /usr /etc /opt /var -type f -o -type l 2>/dev/null | sort > "$before"
+
+        echo "==> Compilando e instalando"
         (cd "$srcdir" && sh -c "$BUILD") || return 1
 
-        # registra arquivos instalados (simples: tudo modificado em /usr)
-        logfile="$LOGDIR/${NAME}-${VERSION}-files.log"
-        find /usr -newermt "$(date -r "$srcfile" '+%Y-%m-%d %H:%M:%S')" > "$logfile"
-        echo "==> Arquivos instalados registrados em $logfile"
+        echo "==> Gerando snapshot depois da instalação"
+        find /usr /etc /opt /var -type f -o -type l 2>/dev/null | sort > "$after"
+
+        echo "==> Gravando diferenças em $logfile"
+        comm -13 "$before" "$after" > "$logfile"
+        echo "==> Instalação concluída. Arquivos rastreados: $(wc -l < "$logfile")"
     else
         echo "Nenhum comando BUILD definido na receita" >&2
     fi
 }
 
+# Execução direta
 if [ $# -gt 0 ]; then
     prepare "$1"
 fi
