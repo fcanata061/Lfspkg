@@ -1,18 +1,6 @@
 #!/bin/sh
 
 prepare() {
-    keep="no"
-    only_download="no"
-
-    # processa opções
-    while [ $# -gt 0 ]; do
-        case "$1" in
-            --keep-workdir)   keep="yes"; shift ;;
-            --only-download)  only_download="yes"; shift ;;
-            *) break ;;
-        esac
-    done
-
     recipe="$1"
 
     if [ ! -f "$recipe" ]; then
@@ -20,26 +8,26 @@ prepare() {
         return 1
     fi
 
-    # Carrega variáveis da receita
+    # Carrega variáveis do .profile e da receita
+    . "$HOME/.profile"
     . "$recipe"
 
-    workdir="${WORKDIR:-./work}"
-
-    if [ "$keep" = "no" ]; then
-        echo "==> Limpando $workdir"
-        rm -rf "$workdir"
-    fi
-    mkdir -p "$workdir"
+    # Garante diretórios
+    mkdir -p "$WORKDIR" "$LOGDIR"
 
     echo "==> Preparando $NAME-$VERSION"
 
-    srcfile="$workdir/${NAME}-${VERSION}.src"
+    # Sempre começa limpo (pode combinar com --keep-workdir se quiser)
+    rm -rf "$WORKDIR"
+    mkdir -p "$WORKDIR"
+
+    srcfile="$WORKDIR/${NAME}-${VERSION}.src"
 
     case "$SOURCE" in
         git:* | http*://*.git)
             echo "==> Clonando repositório git"
-            git clone "$SOURCE" "$workdir/${NAME}-${VERSION}" || return 1
-            srcdir="$workdir/${NAME}-${VERSION}"
+            git clone "$SOURCE" "$WORKDIR/${NAME}-${VERSION}" || return 1
+            srcdir="$WORKDIR/${NAME}-${VERSION}"
             ;;
         http*://* | ftp*://*)
             echo "==> Baixando arquivo"
@@ -47,14 +35,14 @@ prepare() {
 
             echo "==> Extraindo"
             case "$srcfile" in
-                *.tar.gz|*.tgz) tar -xzf "$srcfile" -C "$workdir" ;;
-                *.tar.bz2)      tar -xjf "$srcfile" -C "$workdir" ;;
-                *.tar.xz)       tar -xJf "$srcfile" -C "$workdir" ;;
-                *.zip)          unzip -q "$srcfile" -d "$workdir" ;;
+                *.tar.gz|*.tgz) tar -xzf "$srcfile" -C "$WORKDIR" ;;
+                *.tar.bz2)      tar -xjf "$srcfile" -C "$WORKDIR" ;;
+                *.tar.xz)       tar -xJf "$srcfile" -C "$WORKDIR" ;;
+                *.zip)          unzip -q "$srcfile" -d "$WORKDIR" ;;
                 *) echo "Formato desconhecido: $srcfile" >&2; return 1 ;;
             esac
 
-            srcdir=$(find "$workdir" -mindepth 1 -maxdepth 1 -type d | head -n1)
+            srcdir=$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -n1)
             ;;
         *)
             echo "SOURCE não suportado: $SOURCE" >&2
@@ -64,30 +52,24 @@ prepare() {
 
     echo "==> Diretório fonte: $srcdir"
 
-    if [ "$only_download" = "yes" ]; then
-        echo "==> Apenas download concluído (sem patch/build)"
-        return 0
-    fi
-
     if [ -n "$PATCH" ] && [ -f "$PATCH" ]; then
         echo "==> Aplicando patch $PATCH"
-        (cd "$srcdir" && patch -p1 < "../$PATCH") || return 1
+        (cd "$srcdir" && patch -p1 < "$PATCH") || return 1
     fi
 
     if [ -n "$BUILD" ]; then
         echo "==> Compilando"
         (cd "$srcdir" && sh -c "$BUILD") || return 1
+
+        # registra arquivos instalados (simples: tudo modificado em /usr)
+        logfile="$LOGDIR/${NAME}-${VERSION}-files.log"
+        find /usr -newermt "$(date -r "$srcfile" '+%Y-%m-%d %H:%M:%S')" > "$logfile"
+        echo "==> Arquivos instalados registrados em $logfile"
     else
         echo "Nenhum comando BUILD definido na receita" >&2
     fi
 }
 
-# Execução direta
-# Exemplos:
-#   ./motor.sh recipe.sh
-#   ./motor.sh --keep-workdir recipe.sh
-#   ./motor.sh --only-download recipe.sh
-#   ./motor.sh --keep-workdir --only-download recipe.sh
 if [ $# -gt 0 ]; then
-    prepare "$@"
+    prepare "$1"
 fi
