@@ -1,59 +1,64 @@
 #!/bin/sh
 
+log() {
+    prefix="$1"
+    shift
+    echo "[$prefix] $*"
+}
+
 install_pkg() {
     recipe="$1"
 
     if [ ! -f "$recipe" ]; then
-        echo "Erro: receita '$recipe' não encontrada" >&2
+        log FAIL "Receita '$recipe' não encontrada"
         return 1
     fi
 
-    # Carrega variáveis globais e receita
     . "$HOME/.profile"
     . "$recipe"
+
+    log INFO "Iniciando instalação de $NAME-$VERSION"
 
     # Resolução recursiva de dependências
     if [ -n "$DEPS" ]; then
         for dep in $DEPS; do
             dep_recipe="$BUILDDIR/$dep.sh"
-            echo "==> Instalando dependência $dep"
-            install_pkg "$dep_recipe" || return 1
+            log INFO "Instalando dependência $dep"
+            install_pkg "$dep_recipe" || {
+                log FAIL "Falha ao instalar dependência $dep"
+                return 1
+            }
+            log OK "Dependência $dep instalada"
         done
     fi
 
-    # Compila o pacote
-    echo "==> Compilando $NAME-$VERSION"
+    # Compilação
+    log INFO "Compilando $NAME-$VERSION"
     "$MOTOR_SCRIPT" "$recipe" || {
-        echo "Erro: compilação de $NAME-$VERSION falhou" >&2
+        log FAIL "Compilação de $NAME-$VERSION falhou"
         return 1
     }
+    log OK "Compilação concluída"
 
     # Determina diretório fonte
     srcdir="$WORKDIR/${NAME}-${VERSION}"
     if [ ! -d "$srcdir" ]; then
-        # Caso tenha baixado arquivo, tenta achar a pasta extraída
         srcdir=$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -n1)
     fi
+    [ -d "$srcdir" ] || { log FAIL "Diretório fonte não encontrado"; return 1; }
 
-    if [ ! -d "$srcdir" ]; then
-        echo "Erro: diretório fonte não encontrado em $WORKDIR" >&2
-        return 1
-    fi
-
-    echo "==> Instalando $NAME-$VERSION para /"
-
-    # Cria log de arquivos instalados
-    mkdir -p "$LOGDIR"
+    # Instalação real
+    log INFO "Instalando $NAME-$VERSION para /"
     logfile="$LOGDIR/${NAME}-${VERSION}-files.log"
+    mkdir -p "$LOGDIR"
 
-    # Copia tudo do srcdir para /
-    # rsync preserva links e permissões, e permite dry-run/debug se necessário
-    rsync -a --info=progress2 "$srcdir/" / || return 1
+    # Copia usando rsync
+    rsync -a --info=progress2 "$srcdir/" / || { log FAIL "Falha na cópia para /"; return 1; }
 
-    # Registra todos os arquivos instalados
+    # Registra arquivos instalados
     find "$srcdir" -type f -o -type l | sed "s|$srcdir||" | awk '{print "/" $0}' > "$logfile"
 
-    echo "==> Instalação de $NAME-$VERSION concluída. Log em $logfile"
+    log OK "Instalação de $NAME-$VERSION concluída. Log em $logfile"
 }
 
 # Execução direta
