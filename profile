@@ -1,7 +1,7 @@
-# Diretório raiz do "repositório" de receitas
+# Diretório raiz do repositório de receitas
 REPO_BASE="$HOME/repo"
 
-# Diretório de trabalho temporário (onde fontes são baixados e compilados)
+# Diretório de trabalho temporário
 WORKDIR="$HOME/build"
 
 # Diretório de patches
@@ -14,7 +14,7 @@ BUILDDIR="$REPO_BASE/build"
 LOGDIR="$HOME/.local/pkglogs"
 
 # Caminho do script motor de construção
-MOTOR_SCRIPT="$HOME/bin/motor.sh"
+MOTOR_SCRIPT="$HOME/bin/prepare.sh"
 
 # Caminho do script de remoção
 REMOVE_SCRIPT="$HOME/bin/remove.sh"
