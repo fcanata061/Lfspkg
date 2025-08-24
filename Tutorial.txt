@@ -1,0 +1,208 @@
+===============================================================================
+                           SISTEMA DE GERENCIAMENTO DE PACOTES
+===============================================================================
+
+1. ESTRUTURA DE DIRETÓRIOS
+
+Crie a seguinte organização no seu home:
+
+~/repo/
+├── build/            # Scripts de receitas (.sh)
+│   ├── hello.sh
+│   ├── gcc.sh
+│   ├── gmp.sh
+│   ├── mpfr.sh
+│   └── mpc.sh
+├── patch/            # Patches opcionais para pacotes
+
+~/bin/
+├── prepare.sh
+├── install.sh
+├── remove.sh
+└── pkg.sh            # Script principal
+
+~/build/              # Diretório de compilação temporária (WORKDIR)
+~/testroot/           # Diretório de teste para instalação sem root
+~/.local/pkglogs/     # Logs de instalação
+~/.local/pkglogs_test/# Logs de instalação em modo teste
+
+-------------------------------------------------------------------------------
+2. CONFIGURAÇÃO DO .profile
+
+Adicione as variáveis globais:
+
+export REPO_BASE="$HOME/repo"
+export WORKDIR="$HOME/build"
+export BUILDDIR="$REPO_BASE/build"
+export PATCHDIR="$REPO_BASE/patch"
+export LOGDIR="$HOME/.local/pkglogs"
+export MOTOR_SCRIPT="$HOME/bin/prepare.sh"
+export INSTALL_SCRIPT="$HOME/bin/install.sh"
+export REMOVE_SCRIPT="$HOME/bin/remove.sh"
+export INSTALL_PREFIX="$HOME/testroot"
+
+Execute:
+source ~/.profile
+
+-------------------------------------------------------------------------------
+3. SCRIPTS PRINCIPAIS
+
+a) prepare.sh
+----------------
+#!/bin/sh
+prepare() {
+    recipe="$1"
+    [ -f "$recipe" ] || { echo "[FAIL] Receita não encontrada: $recipe"; return 1; }
+    . "$recipe"
+    echo "[INFO] Preparando $NAME-$VERSION"
+    mkdir -p "$WORKDIR"
+    cd "$WORKDIR" || return 1
+    [ ! -f "${NAME}-${VERSION}.tar.gz" ] && curl -L -O "$SOURCE" || true
+    case "$SOURCE" in
+        *.tar.gz|*.tgz) tar xzf "${NAME}-${VERSION}.tar.gz" ;;
+        *.tar.bz2|*.tbz2) tar xjf "${NAME}-${VERSION}.tar.bz2" ;;
+        *.tar.xz|*.txz) tar xJf "${NAME}-${VERSION}.tar.xz" ;;
+        *.zip) unzip "${NAME}-${VERSION}.zip" ;;
+        *) echo "[WARN] Formato desconhecido, tentando tar xvf"; tar xvf "$SOURCE" ;;
+    esac
+    [ -n "$PATCH" ] && patch -d "$WORKDIR/${NAME}-${VERSION}" -p1 < "$PATCH"
+    [ -n "$BUILD" ] && (cd "$WORKDIR/${NAME}-${VERSION}" && sh -c "$BUILD") || true
+    echo "[OK] Preparação de $NAME-$VERSION concluída"
+}
+[ $# -gt 0 ] && prepare "$1"
+
+b) install.sh
+----------------
+#!/bin/sh
+. "$HOME/.profile"
+log() {
+    prefix="$1"; shift
+    case "$prefix" in
+        INFO) echo -e "\033[1;34m[$prefix] $*\033[0m" ;;
+        OK) echo -e "\033[1;32m[$prefix] $*\033[0m" ;;
+        FAIL) echo -e "\033[1;31m[$prefix] $*\033[0m" ;;
+        WARN) echo -e "\033[1;33m[$prefix] $*\033[0m" ;;
+        *) echo "[$prefix] $*" ;;
+    esac
+}
+progress_bar() {
+    current="$1"; total="$2"; width=30
+    filled=$((current*width/total)); empty=$((width-filled))
+    printf "["; for i in $(seq 1 $filled); do printf "="; done
+    for i in $(seq 1 $empty); do printf " "; done
+    printf "] %d%%\r" $((current*100/total))
+}
+install_pkg() {
+    recipe="$1"; [ -f "$recipe" ] || { log FAIL "Receita não encontrada: $recipe"; return 1; }
+    . "$recipe"
+    log INFO "Instalando $NAME-$VERSION"
+    mkdir -p "$LOGDIR"
+    srcdir="$WORKDIR/${NAME}-${VERSION}"
+    [ -d "$srcdir" ] || srcdir=$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -n1)
+    [ -d "$srcdir" ] || { log FAIL "Diretório fonte não encontrado"; return 1; }
+    files=$(find "$srcdir" -type f -o -type l)
+    total_files=$(echo "$files" | wc -l)
+    count=0
+    for f in $files; do
+        dest="$INSTALL_PREFIX/${f#$srcdir/}"
+        mkdir -p "$(dirname "$dest")"
+        cp -a "$f" "$dest"
+        count=$((count+1))
+        progress_bar "$count" "$total_files"
+    done
+    echo ""
+    logfile="$LOGDIR/${NAME}-${VERSION}-files.log"
+    find "$srcdir" -type f -o -type l | sed "s|$srcdir||" | awk '{print "/" $0}' > "$logfile"
+    log OK "Instalação de $NAME-$VERSION concluída"
+}
+[ $# -gt 0 ] && install_pkg "$1"
+
+c) remove.sh
+----------------
+#!/bin/sh
+. "$HOME/.profile"
+log() { prefix="$1"; shift; echo "[$prefix] $*"; }
+remove_pkg() {
+    recipe="$1"; [ -f "$recipe" ] || { log FAIL "Receita não encontrada: $1"; return 1; }
+    . "$recipe"
+    logfile="$LOGDIR/${NAME}-${VERSION}-files.log"
+    [ -f "$logfile" ] || { log WARN "Log de arquivos não encontrado"; return 1; }
+    log INFO "Removendo $NAME-$VERSION"
+    while read -r f; do [ -e "$f" ] && rm -rf "$f"; done < "$logfile"
+    log OK "Remoção de $NAME-$VERSION concluída"
+}
+[ $# -gt 0 ] && remove_pkg "$1"
+
+d) pkg.sh
+----------------
+#!/bin/sh
+. "$HOME/.profile"
+# Cores ANSI
+BLUE="\033[1;34m"; GREEN="\033[1;32m"; RED="\033[1;31m"; YELLOW="\033[1;33m"; RESET="\033[0m"
+log() { prefix="$1"; shift; case "$prefix" in INFO) echo -e "${BLUE}[$prefix] $*\033[0m";; OK) echo -e "${GREEN}[$prefix] $*\033[0m";; FAIL) echo -e "${RED}[$prefix] $*\033[0m";; WARN) echo -e "${YELLOW}[$prefix] $*\033[0m";; *) echo "[$prefix] $*";; esac; }
+progress_bar() { current="$1"; total="$2"; width=30; filled=$((current*width/total)); empty=$((width-filled)); printf "["; for i in $(seq 1 $filled); do printf "="; done; for i in $(seq 1 $empty); do printf " "; done; printf "] %d%%\r" $((current*100/total)); }
+help() { cat <<EOF
+Uso: pkg.sh <comando> [pacote]
+Comandos:
+  install <pacote>     - Instala pacote (resolve dependências)
+  remove <pacote>      - Remove pacote usando log
+  search <termo>       - Busca pacotes
+  info <pacote>        - Info pacote e log
+  rebuild              - Recompila todo sistema
+  help                 - Mostra este help
+EOF
+}
+install_pkg() { pkg="$1"; recipe="$BUILDDIR/$pkg.sh"; [ -f "$recipe" ] || { log FAIL "Pacote não encontrado: $pkg"; return 1; }; . "$recipe"; log INFO "Instalando $NAME-$VERSION"; if [ -n "$DEPS" ]; then total_dep=$(echo $DEPS | wc -w); count_dep=0; for dep in $DEPS; do count_dep=$((count_dep+1)); echo -ne "${BLUE}[$pkg] Instalando dependência $dep ($count_dep/$total_dep)${RESET}\r"; install_pkg "$dep" || { log FAIL "Falha dependência $dep"; return 1; }; echo -ne "${GREEN}[$pkg] Dependência $dep instalada ($count_dep/$total_dep)${RESET}\n"; done; fi; log INFO "Compilando $NAME-$VERSION"; "$MOTOR_SCRIPT" "$recipe" || { log FAIL "Falha compilação"; return 1; }; log OK "Compilação concluída"; srcdir="$WORKDIR/${NAME}-${VERSION}"; [ -d "$srcdir" ] || srcdir=$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -n1); [ -d "$srcdir" ] || { log FAIL "Diretório fonte não encontrado"; return 1; }; log INFO "Instalando $NAME-$VERSION"; mkdir -p "$LOGDIR"; files=$(find "$srcdir" -type f -o -type l); total_files=$(echo "$files" | wc -l); count=0; for f in $files; do dest="$INSTALL_PREFIX/${f#$srcdir/}"; mkdir -p "$(dirname "$dest")"; cp -a "$f" "$dest"; count=$((count+1)); progress_bar "$count" "$total_files"; done; echo ""; logfile="$LOGDIR/${NAME}-${VERSION}-files.log"; find "$srcdir" -type f -o -type l | sed "s|$srcdir||" | awk '{print "/" $0}' > "$logfile"; log OK "Instalação de $NAME-$VERSION concluída"; }
+remove_pkg() { recipe="$BUILDDIR/$1.sh"; [ -f "$recipe" ] || { log FAIL "Pacote não encontrado: $1"; return 1; }; log INFO "Removendo pacote $1"; "$REMOVE_SCRIPT" "$recipe" || { log FAIL "Falha remoção $1"; return 1; }; log OK "Remoção concluída"; }
+search_pkg() { term="$1"; find "$BUILDDIR" -type f -name "*.sh" | xargs -n1 basename | grep "$term"; }
+info_pkg() { recipe="$BUILDDIR/$1.sh"; [ -f "$recipe" ] || { log FAIL "Pacote não encontrado: $1"; return 1; }; log INFO "Info pacote $1"; grep -E "^(NAME|VERSION|SOURCE|DEPS|PATCH|BUILD)" "$recipe"; echo "Log: $LOGDIR/$1-*.log"; }
+rebuild_system() { pkgs=$(ls "$BUILDDIR"/*.sh | xargs -n1 basename | sed 's/\.sh$//'); total=$(echo "$pkgs" | wc -w); count=0; log INFO "Recompilando sistema"; for pkg in $pkgs; do count=$((count+1)); echo -ne "${BLUE}[Rebuild] Instalando $pkg ($count/$total)${RESET}\r"; install_pkg "$pkg" || log FAIL "Falha $pkg"; echo -ne "${GREEN}[Rebuild] Pacote $pkg concluído ($count/$total)${RESET}\n"; done; log OK "Recompilação completa"; }
+cmd="$1"; shift || true; case "$cmd" in install) install_pkg "$1";; remove) remove_pkg "$1";; search) search_pkg "$1";; info) info_pkg "$1";; rebuild) rebuild_system;; help|"") help;; *) log FAIL "Comando desconhecido: $cmd"; help;; esac
+
+-------------------------------------------------------------------------------
+4. RECEITA DE EXEMPLO: GCC
+
+gcc.sh em $BUILDDIR:
+
+#!/bin/sh
+NAME="gcc"
+VERSION="13.2.0"
+SOURCE="https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz"
+PATCH=""
+DEPS="gmp mpfr mpc"
+PREFIX="$INSTALL_PREFIX"
+BUILD="
+mkdir -p build && cd build
+../configure --prefix=$PREFIX --disable-multilib --enable-languages=c,c++
+make -j$(nproc)
+make install
+"
+
+-------------------------------------------------------------------------------
+5. COMANDOS DE USO
+
+# Instalar pacotes
+./pkg.sh install hello
+./pkg.sh install gcc mpfr mpc gmp
+
+# Remover pacotes
+./pkg.sh remove hello
+./pkg.sh remove gcc
+
+# Buscar pacotes
+./pkg.sh search gcc
+
+# Informações de pacotes
+./pkg.sh info gcc
+
+# Recompilar todo sistema
+./pkg.sh rebuild
+
+-------------------------------------------------------------------------------
+6. TESTE SEGURO SEM ROOT
+
+- Defina INSTALL_PREFIX="$HOME/testroot" no .profile
+- Todos os pacotes serão instalados em testroot
+- Evita mexer no / do sistema
+
+===============================================================================
