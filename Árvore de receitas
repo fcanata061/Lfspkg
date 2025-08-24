@@ -1,0 +1,60 @@
+~/repo/build/
+├── binutils.sh
+├── gcc.sh
+├── gmp.sh
+├── mpfr.sh
+├── mpc.sh
+├── bash.sh
+├── coreutils.sh
+├── file.sh
+├── findutils.sh
+├── gawk.sh
+├── grep.sh
+├── sed.sh
+├── tar.sh
+├── texinfo.sh
+├── xz.sh
+├── patch.sh
+├── gzip.sh
+└── bzip2.sh
+
+#!/bin/sh
+NAME="binutils"
+VERSION="2.42"
+SOURCE="https://ftp.gnu.org/gnu/binutils/binutils-2.42.tar.gz"
+PATCH=""
+DEPS=""
+PREFIX="$INSTALL_PREFIX"
+BUILD="
+mkdir -p build && cd build
+../configure --prefix=$PREFIX --disable-multilib
+make -j$(nproc)
+make install
+"
+
+#!/bin/sh
+NAME="gmp"
+VERSION="6.3.0"
+SOURCE="https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz"
+PATCH=""
+DEPS=""
+PREFIX="$INSTALL_PREFIX"
+BUILD="
+./configure --prefix=$PREFIX --disable-shared --enable-cxx
+make -j$(nproc)
+make install
+"
+
+#!/bin/sh
+NAME="mpfr"
+VERSION="4.2.0"
+SOURCE="https://www.mpfr.org/mpfr-current/mpfr-4.2.0.tar.xz"
+PATCH=""
+DEPS="gmp"
+PREFIX="$INSTALL_PREFIX"
+BUILD="
+./configure --prefix=$PREFIX --with-gmp=$PREFIX --disable-shared
+make -j$(nproc)
+make install
+"
+
