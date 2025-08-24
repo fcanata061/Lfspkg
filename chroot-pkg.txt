@@ -1,0 +1,140 @@
+===============================================================================
+                     SISTEMA CHROOT + PKG.SH (LFS TEST)
+===============================================================================
+
+1. ESTRUTURA DE DIRETÓRIOS
+
+Crie a seguinte organização:
+
+~/repo/
+├── build/            # Scripts de receitas (.sh)
+│   ├── hello.sh
+│   ├── gcc.sh
+│   ├── gmp.sh
+│   ├── mpfr.sh
+│   └── mpc.sh
+├── patch/            # Patches opcionais
+
+~/bin/
+├── prepare.sh
+├── install.sh
+├── remove.sh
+├── pkg.sh
+└── chroot-pkg.sh     # Script para chroot + instalação automática
+
+~/build/              # Diretório temporário de compilação (WORKDIR)
+~/testroot/           # Diretório de teste para instalação sem root
+~/.local/pkglogs/     # Logs de instalação
+~/.local/pkglogs_test/# Logs de instalação em modo teste
+
+-------------------------------------------------------------------------------
+2. CONFIGURAÇÃO DO .profile
+
+Adicione as variáveis:
+
+export REPO_BASE="$HOME/repo"
+export WORKDIR="$HOME/build"
+export BUILDDIR="$REPO_BASE/build"
+export PATCHDIR="$REPO_BASE/patch"
+export LOGDIR="$HOME/.local/pkglogs"
+export MOTOR_SCRIPT="$HOME/bin/prepare.sh"
+export INSTALL_SCRIPT="$HOME/bin/install.sh"
+export REMOVE_SCRIPT="$HOME/bin/remove.sh"
+export INSTALL_PREFIX="$HOME/testroot"
+
+# Carregar variáveis
+source ~/.profile
+
+-------------------------------------------------------------------------------
+3. USO DO CHROOT-PKG.SH
+
+# Preparar chroot e instalar pacotes
+sudo ./bin/chroot-pkg.sh <diretório_chroot> [pacotes...]
+
+Exemplo:
+
+sudo ./bin/chroot-pkg.sh ~/lfs_root gcc gmp mpfr mpc
+
+Funcionalidades:
+- Monta pseudo-filesystems: /dev, /dev/pts, /proc, /sys, /run
+- Verifica se já estão montados para não duplicar
+- Copia pkg.sh, prepare.sh, install.sh e receitas para dentro do chroot
+- Instala pacotes no chroot via pkg.sh
+- Mantém logs de instalação em /pkglogs dentro do chroot
+- Abre bash interativo no chroot
+- Desmonta automaticamente ao sair
+
+-------------------------------------------------------------------------------
+4. COMANDOS DISPONÍVEIS NO CHROOT VIA PKG.SH
+
+Dentro do chroot você pode usar pkg.sh:
+
+# Instalar pacote
+pkg.sh install <pacote>
+
+# Remover pacote
+pkg.sh remove <pacote>
+
+# Buscar pacotes
+pkg.sh search <termo>
+
+# Informações do pacote
+pkg.sh info <pacote>
+
+# Recompilar todo sistema
+pkg.sh rebuild
+
+# Ajuda
+pkg.sh help
+
+-------------------------------------------------------------------------------
+5. MODELO DE RECEITA: GCC (gcc.sh)
+
+Coloque em $BUILDDIR/gcc.sh:
+
+#!/bin/sh
+NAME="gcc"
+VERSION="13.2.0"
+SOURCE="https://ftp.gnu.org/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.gz"
+PATCH=""
+DEPS="gmp mpfr mpc"
+PREFIX="$INSTALL_PREFIX"
+BUILD="
+mkdir -p build && cd build
+../configure --prefix=$PREFIX --disable-multilib --enable-languages=c,c++
+make -j$(nproc)
+make install
+"
+
+Explicação:
+- NAME, VERSION: identificação do pacote
+- SOURCE: link para download da fonte
+- PATCH: patch opcional
+- DEPS: dependências (serão instaladas antes)
+- PREFIX: diretório de instalação (usa INSTALL_PREFIX no teste)
+- BUILD: comandos de compilação
+
+-------------------------------------------------------------------------------
+6. FLUXO DE TESTE COMPLETO
+
+# Criar root do LFS temporário
+mkdir -p ~/lfs_root
+
+# Preparar chroot e instalar GCC com dependências
+sudo ./bin/chroot-pkg.sh ~/lfs_root gmp mpfr mpc gcc
+
+# Entrará no bash do chroot interativo
+# Dentro do chroot, você pode usar pkg.sh para instalar outros pacotes ou verificar logs
+
+# Ao sair do chroot, o script desmonta /dev, /dev/pts, /proc, /sys, /run automaticamente
+
+-------------------------------------------------------------------------------
+7. DICAS
+
+- Use INSTALL_PREFIX="$HOME/testroot" para testar instalações sem root
+- Logs detalhados ficam em ~/.local/pkglogs ou /pkglogs dentro do chroot
+- Sempre defina DEPS nas receitas para que pkg.sh resolva dependências recursivas
+- Para criar seu mini-LFS, crie receitas para todos os pacotes essenciais na ordem correta
+- pkg.sh rebuild recompila todos os pacotes existentes no BUILDDIR
+
+===============================================================================
