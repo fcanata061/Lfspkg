@@ -17,3 +17,6 @@ LOGDIR="$HOME/.local/pkglogs"
 PREPARE_SCRIPT="$HOME/bin/prepare.sh"
 REMOVE_SCRIPT="$HOME/bin/remove.sh"
 INSTALL_SCRIPT="$HOME/bin/install.sh"
+
+# Script que realiza compilação e preparação
+MOTOR_SCRIPT="$PREPARE_SCRIPT"
