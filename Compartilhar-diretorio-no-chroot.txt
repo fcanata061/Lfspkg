@@ -1,0 +1,9 @@
+mkdir -p $HOME/lfs-chroot/mnt/host
+sudo mount --bind $HOME/my-project $HOME/lfs-chroot/mnt/host
+
+sudo chroot $HOME/lfs-chroot /bin/bash
+
+# dentro do chroot
+cd /mnt/host/recipes
+./build.sh gcc.recipe
+# pacotes finais podem ser salvos em /mnt/host/packages
