@@ -43,6 +43,19 @@ export INSTALL_PREFIX="$HOME/testroot"
 
 Execute:
 source ~/.profile
+---------‐-----------------------------------------------
+# Defina INSTALL_PREFIX como o root do LFS temporário
+export INSTALL_PREFIX="$HOME/lfs_root"
+
+# Exemplo de instalação ordenada
+./pkg.sh install binutils
+./pkg.sh install gcc
+./pkg.sh install glibc
+./pkg.sh install coreutils
+./pkg.sh install bash
+./pkg.sh install sed
+./pkg.sh install grep
+... Para construirn LFS
 
 -------------------------------------------------------------------------------
 3. SCRIPTS PRINCIPAIS
